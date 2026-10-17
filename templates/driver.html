@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SmartFleet Driver App</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .pulse-dot { animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col antialiased">
+
+  <!-- Mobile Top Bar -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 py-3 flex items-center justify-between shadow-xs">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">
+        <i data-lucide="navigation" class="w-4 h-4"></i>
+      </div>
+      <div>
+        <h1 class="font-semibold text-sm leading-tight text-slate-900">Driver Console</h1>
+        <div class="flex items-center gap-1.5 text-[11px] text-slate-500">
+          <span id="gps-indicator" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span id="gps-text">GPS Standby</span>
+        </div>
+      </div>
+    </div>
+    <a href="/" class="text-xs text-blue-600 hover:text-blue-700 font-medium px-2.5 py-1 rounded-md bg-blue-50 border border-blue-100 flex items-center gap-1">
+      <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i> Dispatch
+    </a>
+  </header>
+
+  <!-- Driver Controls Container -->
+  <main class="flex-1 max-w-md mx-auto w-full p-4 space-y-4">
+
+    <!-- Telemetry Mode Switcher Card -->
+    <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-xs font-semibold text-slate-800">Vehicle GPS Broadcast</div>
+          <div class="text-[11px] text-slate-500" id="coords-text">Lat: 13.0067, Lon: 80.2570</div>
+        </div>
+        <button id="btn-toggle-gps" onclick="togglePhoneGPS()" class="px-3.5 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 transition flex items-center gap-1.5">
+          <i data-lucide="radio" class="w-3.5 h-3.5 text-slate-500"></i> Start GPS
+        </button>
+      </div>
+
+      <!-- Quick Virtual Drive Simulator (Demo helper) -->
+      <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+        <span class="text-[11px] text-slate-500">Indoor Demo:</span>
+        <button onclick="stepVirtualDrive()" class="text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 px-3 py-1 rounded-lg flex items-center gap-1 transition">
+          <i data-lucide="fast-forward" class="w-3.5 h-3.5"></i> Drive Towards Next Stop
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Target Stop Banner -->
+    <div id="active-stop-card" class="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm space-y-4 relative overflow-hidden">
+      <div class="absolute top-0 left-0 right-0 h-1.5 bg-blue-600"></div>
+
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700 uppercase tracking-wider mb-1">
+            Current Destination
+          </span>
+          <h2 id="active-customer" class="font-bold text-base text-slate-900 leading-snug">Loading next stop...</h2>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400 uppercase font-semibold">Deadline</div>
+          <div id="active-deadline" class="font-bold text-sm text-slate-800">--:--</div>
+        </div>
+      </div>
+
+      <div class="space-y-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+        <div class="flex items-start gap-2">
+          <i data-lucide="map-pin" class="w-4 h-4 text-slate-400 shrink-0 mt-0.5"></i>
+          <span id="active-address" class="leading-relaxed">...</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <i data-lucide="package" class="w-4 h-4 text-slate-400 shrink-0"></i>
+          <span>Items: <b id="active-items" class="text-slate-800">...</b></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <i data-lucide="clock" class="w-4 h-4 text-slate-400 shrink-0"></i>
+          <span>Dynamic ETA: <b id="active-eta" class="text-blue-600">--:--</b></span>
+        </div>
+      </div>
+
+      <button id="btn-complete" onclick="markDelivered()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-4 rounded-xl text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.98]">
+        <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+        Mark Stop as Delivered
+      </button>
+    </div>
+
+    <!-- Upcoming Stops Queue -->
+    <div class="space-y-2">
+      <div class="flex items-center justify-between px-1">
+        <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wider">Remaining Stops</h3>
+        <span id="queue-count" class="text-[11px] text-slate-500">0 pending</span>
+      </div>
+
+      <div id="queue-container" class="space-y-2">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Mobile Bottom Help -->
+  <footer class="p-3 text-center text-[11px] text-slate-400 border-t border-slate-200 bg-white">
+    SmartFleet Driver Telemetry • Works with Phone GPS or Traccar Client
+  </footer>
+
+  <script>
+    lucide.createIcons();
+
+    let isGpsActive = false;
+    let watchId = null;
+    let currentStopId = null;
+    let currentCoords = { lat: 13.0067, lon: 80.2570 };
+
+    // Toggle Phone Native Geolocation
+    function togglePhoneGPS() {
+      const btn = document.getElementById('btn-toggle-gps');
+      const ind = document.getElementById('gps-indicator');
+      const txt = document.getElementById('gps-text');
+
+      if (!isGpsActive) {
+        if (!navigator.geolocation) {
+          alert('Geolocation not supported by this browser.');
+          return;
+        }
+
+        watchId = navigator.geolocation.watchPosition(
+          pos => {
+            currentCoords.lat = pos.coords.latitude;
+            currentCoords.lon = pos.coords.longitude;
+            const speedKmh = (pos.coords.speed || 0) * 3.6;
+
+            document.getElementById('coords-text').innerText = 
+              `Lat: ${currentCoords.lat.toFixed(4)}, Lon: ${currentCoords.lon.toFixed(4)} (${speedKmh.toFixed(0)} km/h)`;
+
+            // Send to backend /location
+            postLocation(currentCoords.lat, currentCoords.lon, speedKmh, 'phone-gps');
+          },
+          err => {
+            console.error('GPS error:', err);
+            txt.innerText = 'GPS Permission Denied';
+            ind.className = 'w-2 h-2 rounded-full bg-red-500';
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 2000 }
+        );
+
+        isGpsActive = true;
+        btn.innerHTML = `<i data-lucide="radio" class="w-3.5 h-3.5 text-emerald-600"></i> Stop GPS`;
+        btn.className = 'px-3.5 py-1.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-1.5';
+        ind.className = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot';
+        txt.innerText = 'Broadcasting Phone GPS';
+      } else {
+        if (watchId) navigator.geolocation.clearWatch(watchId);
+        isGpsActive = false;
+        btn.innerHTML = `<i data-lucide="radio" class="w-3.5 h-3.5 text-slate-500"></i> Start GPS`;
+        btn.className = 'px-3.5 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 transition flex items-center gap-1.5';
+        ind.className = 'w-2 h-2 rounded-full bg-slate-400';
+        txt.innerText = 'GPS Standby';
+      }
+      lucide.createIcons();
+    }
+
+    async function postLocation(lat, lon, speed, source) {
+      try {
+        await fetch('/location', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            id: 'driver-phone',
+            lat: lat,
+            lon: lon,
+            speed: speed,
+            timestamp: Math.floor(Date.now() / 1000),
+            source: source
+          })
+        });
+      } catch (e) {
+        console.error('Failed to post location:', e);
+      }
+    }
+
+    // Step drive towards next stop (simulation helper)
+    async function stepVirtualDrive() {
+      if (!currentStopId) {
+        alert('All stops are already delivered!');
+        return;
+      }
+      // Nudge coordinates closer to target stop
+      const targetStop = activeStops.find(s => s.id === currentStopId);
+      if (targetStop) {
+        currentCoords.lat = currentCoords.lat + (targetStop.lat - currentCoords.lat) * 0.4;
+        currentCoords.lon = currentCoords.lon + (targetStop.lon - currentCoords.lon) * 0.4;
+        document.getElementById('coords-text').innerText = 
+          `Simulated: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lon.toFixed(4)}`;
+        await postLocation(currentCoords.lat, currentCoords.lon, 45, 'driver-sim');
+        pollState();
+      }
+    }
+
+    // Mark current stop as delivered
+    async function markDelivered() {
+      try {
+        const res = await fetch('/api/stop/deliver', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ stop_id: currentStopId })
+        });
+        const data = await res.json();
+        if (data.status === 'delivered') {
+          pollState();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    let activeStops = [];
+
+    // Poll current state
+    async function pollState() {
+      try {
+        const res = await fetch('/api/state');
+        if (!res.ok) return;
+        const data = await res.json();
+        activeStops = data.stops || [];
+
+        const pending = activeStops.filter(s => s.status !== 'DELIVERED');
+        document.getElementById('queue-count').innerText = `${pending.length} pending`;
+
+        if (pending.length > 0) {
+          const first = pending[0];
+          currentStopId = first.id;
+          document.getElementById('active-customer').innerText = first.customer;
+          document.getElementById('active-address').innerText = first.address;
+          document.getElementById('active-items').innerText = first.items || 'General Parcel';
+          document.getElementById('active-deadline').innerText = first.deadline;
+          document.getElementById('active-eta').innerText = first.eta || '--:--';
+          document.getElementById('btn-complete').disabled = false;
+        } else {
+          currentStopId = null;
+          document.getElementById('active-customer').innerText = "All Deliveries Completed! 🎉";
+          document.getElementById('active-address').innerText = "Return to base depot.";
+          document.getElementById('active-items').innerText = "None";
+          document.getElementById('active-deadline').innerText = "Done";
+          document.getElementById('active-eta').innerText = "--";
+          document.getElementById('btn-complete').disabled = true;
+        }
+
+        // Render remaining queue
+        const remaining = pending.slice(1);
+        const container = document.getElementById('queue-container');
+        if (remaining.length === 0) {
+          container.innerHTML = `<div class="p-3 text-center text-xs text-slate-400 bg-white rounded-xl border border-slate-200">No further stops in queue</div>`;
+        } else {
+          container.innerHTML = remaining.map((s, idx) => `
+            <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs">
+              <div class="space-y-0.5 truncate pr-2">
+                <div class="font-semibold text-slate-800 flex items-center gap-1.5">
+                  <span class="w-4 h-4 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px]">${idx + 2}</span>
+                  ${s.customer}
+                </div>
+                <div class="text-[11px] text-slate-500 truncate">${s.address}</div>
+              </div>
+              <div class="text-right shrink-0">
+                <div class="text-[10px] text-slate-400 font-semibold">ETA</div>
+                <div class="font-bold text-slate-700">${s.eta || s.deadline}</div>
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    pollState();
+    setInterval(pollState, 2000);
+  </script>
+</body>
+</html>
+

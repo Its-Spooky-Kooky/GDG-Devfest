@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartFleet AI • Dispatch & Telemetry</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS for Interactive Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    #map { height: 460px; border-radius: 0.75rem; z-index: 10; }
+    .pulse-truck {
+      box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.5);
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.5); }
+      70% { transform: scale(1.08); box-shadow: 0 0 0 12px rgba(37, 99, 235, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col antialiased">
+
+  <!-- Minimalist Top Navigation -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-50 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
+        <i data-lucide="truck" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-base text-slate-900 leading-tight flex items-center gap-2">
+          SmartFleet
+          <span class="text-[11px] font-normal text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md font-mono">AI Logistics</span>
+        </h1>
+        <p class="text-xs text-slate-500">Autonomous Fleet Dispatch & Exception Management</p>
+      </div>
+    </div>
+
+    <!-- Right Controls & Status -->
+    <div class="flex items-center gap-2.5 text-xs">
+      <span id="badge-gemini" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-medium">
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Gemini AI
+      </span>
+      <span id="badge-routes" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-medium">
+        <span class="w-2 h-2 rounded-full bg-blue-500"></span> Routing Engine
+      </span>
+      <span id="badge-firestore" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-medium">
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Database
+      </span>
+
+      <!-- Link to Mobile Driver App -->
+      <a href="/driver" target="_blank" class="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-medium transition shadow-2xs">
+        <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+        Driver App
+      </a>
+
+      <button onclick="resetDemo()" class="text-xs bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-600 transition flex items-center gap-1 shadow-2xs">
+        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-400"></i> Reset
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="flex-1 p-6 max-w-7xl mx-auto w-full space-y-5">
+
+    <!-- KPI Metrics Row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+        <div class="text-xs font-medium text-slate-500">Deliveries Completed</div>
+        <div class="text-2xl font-bold text-slate-900 mt-1" id="stat-delivered">0 / 0</div>
+        <div class="text-[11px] text-slate-400 mt-0.5">Automated geofence &lt;60m</div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+        <div class="text-xs font-medium text-slate-500">On-Time Accuracy</div>
+        <div class="text-2xl font-bold text-emerald-600 mt-1" id="stat-ontime">100%</div>
+        <div class="text-[11px] text-slate-400 mt-0.5">Dynamic ETA calculation</div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+        <div class="text-xs font-medium text-slate-500">AI Exceptions Detected</div>
+        <div class="text-2xl font-bold text-slate-900 mt-1" id="stat-delayed">0</div>
+        <div class="text-[11px] text-slate-400 mt-0.5" id="stat-delayed-sub">Drafted notifications</div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+        <div class="text-xs font-medium text-slate-500">Vehicle Telemetry</div>
+        <div class="text-2xl font-bold text-slate-900 mt-1" id="stat-speed">0.0 km/h</div>
+        <div class="text-[11px] text-slate-400 mt-0.5" id="stat-source">Awaiting telemetry</div>
+      </div>
+    </div>
+
+    <!-- Two-Column Grid: Left (Intake & Stops) | Right (Map & Exceptions) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+      <!-- LEFT COLUMN: Order Intake & Stops (5 cols) -->
+      <div class="lg:col-span-5 space-y-5">
+
+        <!-- 1. Order Intake Card -->
+        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5 text-blue-600"></i>
+              Gemini Order Intake
+            </h2>
+            <button onclick="loadSampleOrders()" class="text-xs text-blue-600 hover:text-blue-700 font-medium">Load Sample</button>
+          </div>
+          <textarea id="orders-input" rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 resize-none font-mono transition" placeholder="Paste unorganized order text..."></textarea>
+          <div class="flex items-center gap-2">
+            <button id="btn-parse" onclick="parseOrders()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition shadow-2xs">
+              <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+              Parse with Gemini
+            </button>
+            <button onclick="optimizeRoute()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-3 rounded-lg text-xs flex items-center gap-1.5 transition border border-slate-200">
+              <i data-lucide="shuffle" class="w-3.5 h-3.5 text-slate-500"></i>
+              Optimize
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Ordered Delivery Stops List -->
+        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="list-ordered" class="w-3.5 h-3.5 text-blue-600"></i>
+              Delivery Sequence
+            </h2>
+            <span class="text-xs text-slate-400" id="stops-counter">4 stops</span>
+          </div>
+
+          <div id="stops-container" class="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- 3. Driver & Simulator Quick Box -->
+        <div class="bg-slate-100 border border-slate-200 rounded-xl p-3.5 text-xs space-y-1.5">
+          <div class="font-medium text-slate-700 flex items-center justify-between">
+            <span class="flex items-center gap-1.5"><i data-lucide="radio" class="w-3.5 h-3.5 text-emerald-600"></i> Live Telemetry Feed</span>
+            <a href="/driver" target="_blank" class="text-blue-600 hover:underline">Open Phone Driver &rarr;</a>
+          </div>
+          <p class="text-slate-500 text-[11px] leading-relaxed">
+            Feed coordinates from phone GPS or run the automated terminal simulator:
+          </p>
+          <div class="bg-white p-2 rounded border border-slate-200 font-mono text-[11px] text-slate-700 select-all overflow-x-auto">
+            ./run_simulator.sh
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: Map & AI Exception Center (7 cols) -->
+      <div class="lg:col-span-7 space-y-5">
+
+        <!-- Live Map Card -->
+        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 font-semibold text-xs text-slate-800 uppercase tracking-wider">
+              <i data-lucide="map" class="w-3.5 h-3.5 text-blue-600"></i>
+              Live Fleet Map
+              <span class="text-[10px] normal-case bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">OpenStreetMap Free</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-500 hover:text-slate-800">
+                <input type="checkbox" id="chk-follow" checked class="rounded border-slate-300 text-blue-600 focus:ring-0">
+                Follow Vehicle
+              </label>
+            </div>
+          </div>
+
+          <div id="map"></div>
+
+          <div class="flex items-center justify-between text-[11px] text-slate-500 px-1">
+            <div class="flex items-center gap-3">
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span> Driver</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Delivered</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Pending</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Delayed</span>
+            </div>
+            <span id="vehicle-coords" class="font-mono text-slate-400">13.0067, 80.2570</span>
+          </div>
+        </div>
+
+        <!-- AI Exception & Delay Center -->
+        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-rose-500"></i>
+              Gemini Exception Alerts
+            </h2>
+            <span id="alerts-counter" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-mono">0 alerts</span>
+          </div>
+          <p class="text-xs text-slate-500">When calculated arrival time exceeds a stop's deadline, Gemini drafts empathetic customer SMS notifications in real time.</p>
+
+          <div id="alerts-container" class="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+            <div class="text-center py-6 text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg bg-slate-50">
+              No ETA breaches detected. All deliveries on schedule.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    lucide.createIcons();
+
+    // Leaflet Map with Universal Free OpenStreetMap
+    const map = L.map('map').setView([13.0400, 80.2400], 12);
+    const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
+    }).addTo(map);
+
+    osmLayer.on('tileerror', function(error, tile) {
+      tile.src = 'https://a.tile.openstreetmap.fr/hot/' + error.coords.z + '/' + error.coords.x + '/' + error.coords.y + '.png';
+    });
+
+    let truckMarker = null;
+    let stopMarkers = [];
+    let routePolyline = null;
+
+    // Minimalist Truck Icon
+    const truckIcon = L.divIcon({
+      className: 'custom-truck-icon',
+      html: `<div class="w-8 h-8 rounded-full bg-blue-600 pulse-truck flex items-center justify-center text-white shadow-md border-2 border-white">
+               <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+             </div>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    });
+
+    function createStopIcon(idx, status) {
+      let colorClass = 'bg-amber-500';
+      if (status === 'DELIVERED') colorClass = 'bg-emerald-500';
+      if (status === 'DELAYED') colorClass = 'bg-rose-500';
+
+      return L.divIcon({
+        className: 'custom-stop-icon',
+        html: `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center text-white text-[10px] font-bold shadow-sm border border-white">
+                 ${idx}
+               </div>`,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
+    }
+
+    function loadSampleOrders() {
+      const sample = `1. Deliver 2 emergency oncology kits to Apollo Hospital Greams Road before 13:30, urgent contact Mohan.
+2. Deliver lab pathology vials to Adyar Cancer Institute Sardar Patel Road before 13:45, keep cold.
+3. Deliver retail parcel to T. Nagar Panagal Park commercial depot before 14:15.
+4. Transport priority shipping docs to Anna Nagar Depot 2nd Ave before 14:40.`;
+      document.getElementById('orders-input').value = sample;
+    }
+
+    async function parseOrders() {
+      const text = document.getElementById('orders-input').value.trim();
+      if (!text) {
+        alert('Please enter or load sample order text first.');
+        return;
+      }
+      const btn = document.getElementById('btn-parse');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin inline-block mr-1">⏳</span> Parsing...`;
+
+      try {
+        const res = await fetch('/api/orders/intake', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          fetchState();
+        } else {
+          alert('Parse error: ' + (data.error || 'Failed'));
+        }
+      } catch (e) {
+        alert('Request failed: ' + e);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="bot" class="w-3.5 h-3.5"></i> Parse with Gemini`;
+        lucide.createIcons();
+      }
+    }
+
+    async function optimizeRoute() {
+      try {
+        await fetch('/api/route/optimize', { method: 'POST' });
+        fetchState();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function resetDemo() {
+      try {
+        await fetch('/api/reset', { method: 'POST' });
+        fetchState();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function fetchState() {
+      try {
+        const res = await fetch('/api/state');
+        if (!res.ok) return;
+        const data = await res.json();
+        renderDashboard(data);
+      } catch (e) {
+        console.error('State poll error:', e);
+      }
+    }
+
+    function renderDashboard(data) {
+      // 1. KPI Stats
+      document.getElementById('stat-delivered').innerText = `${data.stats.delivered_stops} / ${data.stats.total_stops}`;
+      document.getElementById('stat-ontime').innerText = `${data.stats.on_time_pct}%`;
+      document.getElementById('stat-delayed').innerText = data.stats.delayed_stops;
+      document.getElementById('stat-delayed-sub').innerText = data.stats.delayed_stops > 0 ? "Customer delay alerts sent" : "Zero delays detected";
+      document.getElementById('stat-speed').innerText = `${(data.vehicle.speed_kmh || 0).toFixed(1)} km/h`;
+      document.getElementById('stat-source').innerText = `Source: ${data.vehicle.source || 'standby'}`;
+      document.getElementById('vehicle-coords').innerText = `${data.vehicle.lat.toFixed(4)}, ${data.vehicle.lon.toFixed(4)}`;
+
+      // 2. Service flags
+      if (data.flags.gemini_active) {
+        document.getElementById('badge-gemini').innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Gemini 2.5 (Cloud)';
+      } else {
+        document.getElementById('badge-gemini').innerHTML = '<span class="w-2 h-2 rounded-full bg-blue-500"></span> Gemini (Demo)';
+      }
+
+      if (data.flags.google_maps_active) {
+        document.getElementById('badge-routes').innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Routes API (Live)';
+      } else {
+        document.getElementById('badge-routes').innerHTML = '<span class="w-2 h-2 rounded-full bg-blue-500"></span> TSP Engine (Local)';
+      }
+
+      if (data.flags.firestore_active) {
+        document.getElementById('badge-firestore').innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Firestore (Cloud)';
+      } else {
+        document.getElementById('badge-firestore').innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-400"></span> Cache (Local)';
+      }
+
+      // 3. Map Marker for Vehicle
+      const vLat = data.vehicle.lat;
+      const vLon = data.vehicle.lon;
+      if (!truckMarker) {
+        truckMarker = L.marker([vLat, vLon], { icon: truckIcon }).addTo(map);
+        truckMarker.bindPopup(`<b>Vehicle:</b> ${data.vehicle.device}<br><b>Speed:</b> ${(data.vehicle.speed_kmh || 0).toFixed(1)} km/h`);
+      } else {
+        truckMarker.setLatLng([vLat, vLon]);
+      }
+
+      if (document.getElementById('chk-follow').checked) {
+        map.panTo([vLat, vLon], { animate: true, duration: 0.5 });
+      }
+
+      // 4. Stop Markers
+      stopMarkers.forEach(m => map.removeLayer(m));
+      stopMarkers = [];
+      data.stops.forEach((s, idx) => {
+        const marker = L.marker([s.lat, s.lon], { icon: createStopIcon(idx + 1, s.status) }).addTo(map);
+        marker.bindPopup(`<b>#${idx + 1}: ${s.customer}</b><br>${s.address}<br><b>Deadline:</b> ${s.deadline} | <b>ETA:</b> ${s.eta || 'N/A'}`);
+        stopMarkers.push(marker);
+      });
+
+      // 5. Polyline Route
+      if (routePolyline) map.removeLayer(routePolyline);
+      if (data.route_points && data.route_points.length > 1) {
+        routePolyline = L.polyline(data.route_points, { color: '#2563eb', weight: 3.5, opacity: 0.8, dashArray: '5, 5' }).addTo(map);
+      }
+
+      // 6. Stops List
+      document.getElementById('stops-counter').innerText = `${data.stops.length} stops`;
+      const stopsContainer = document.getElementById('stops-container');
+      stopsContainer.innerHTML = data.stops.map((s, idx) => {
+        let statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">PENDING</span>`;
+        let borderClass = `border-slate-200`;
+        if (s.status === 'DELIVERED') {
+          statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">DELIVERED</span>`;
+          borderClass = `border-emerald-200 bg-emerald-50/20`;
+        } else if (s.eta_breached || s.status === 'DELAYED') {
+          statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200">DELAY RISK</span>`;
+          borderClass = `border-rose-200 bg-rose-50/20`;
+        }
+
+        return `
+          <div class="p-3 rounded-lg border ${borderClass} bg-white text-xs space-y-1.5 transition shadow-2xs">
+            <div class="flex items-start justify-between gap-2">
+              <div class="font-semibold text-slate-800 flex items-center gap-1.5">
+                <span class="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] text-slate-700 font-mono">${idx + 1}</span>
+                ${s.customer}
+              </div>
+              ${statusBadge}
+            </div>
+            <div class="text-[11px] text-slate-500 truncate">${s.address}</div>
+            <div class="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+              <span>Items: <b class="text-slate-700 font-medium">${s.items || 'General'}</b></span>
+              <span>Deadline: <b class="text-slate-700 font-medium">${s.deadline}</b> | ETA: <b class="${s.eta_breached ? 'text-rose-600 font-semibold' : 'text-blue-600 font-semibold'}">${s.eta}</b></span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 7. AI Exceptions Log
+      document.getElementById('alerts-counter').innerText = `${data.alerts.length} alerts`;
+      const alertsContainer = document.getElementById('alerts-container');
+      if (data.alerts.length === 0) {
+        alertsContainer.innerHTML = `
+          <div class="text-center py-6 text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg bg-slate-50">
+            No ETA breaches detected. All deliveries on schedule.
+          </div>`;
+      } else {
+        alertsContainer.innerHTML = data.alerts.map(a => `
+          <div class="p-3 rounded-lg border border-rose-200 bg-rose-50/30 space-y-2 text-xs">
+            <div class="flex items-center justify-between">
+              <div class="font-semibold text-rose-800 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                Deadline Breached: ${a.customer}
+              </div>
+              <span class="text-[10px] text-slate-400 font-mono">${a.timestamp}</span>
+            </div>
+            <div class="text-slate-600 text-[11px]">
+              Expected delay: <b class="text-rose-700 font-semibold">${a.delay_mins} mins</b> | Revised ETA: <b class="text-slate-800 font-semibold">${a.revised_eta}</b>
+            </div>
+            <div class="bg-white p-2.5 rounded border border-rose-100 text-[11px] text-slate-700 leading-relaxed italic">
+              "${a.drafted_notification}"
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-0.5">
+              <button onclick="navigator.clipboard.writeText('${a.drafted_notification.replace(/'/g, "\\'")}')" class="text-[10px] bg-white hover:bg-slate-50 border border-slate-200 px-2 py-1 rounded text-slate-600 transition shadow-2xs">
+                Copy Message
+              </button>
+              <span class="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Auto-Dispatched</span>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    fetchState();
+    setInterval(fetchState, 1500);
+  </script>
+</body>
+</html>
